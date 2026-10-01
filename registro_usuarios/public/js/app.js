@@ -1,0 +1,372 @@
+// public/js/app.js
+// Controla la vista: llena el formulario, valida, envía y pinta la lista.
+import { getCatalogs, getUsers, createUser, createRole } from './api.js';
+
+// ---------- Referencias al DOM ----------
+
+
+const form = document.getElementById('userForm');
+const rolesList = document.getElementById('rolesList');
+const userList = document.getElementById('userList');
+const userCount = document.getElementById('userCount');
+const formMessage = document.getElementById('formMessage');
+const submitBtn = document.getElementById('submitBtn');
+const togglePassword = document.getElementById('togglePassword');
+const createRoleBtn = document.getElementById('createRoleBtn');
+
+// ---------- Utilidades ----------
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value ?? '';
+  return div.innerHTML;
+}
+
+function fillSelect(select, items, placeholder) {
+  select.innerHTML = '';
+  select.append(new Option(placeholder, ''));
+  items.forEach((item) => select.append(new Option(item.name, item.id)));
+}
+
+function setMessage(text, type = '') {
+  formMessage.textContent = text;
+  formMessage.className = `form-message ${type}`;
+}
+
+function clearErrors() {
+  form.querySelectorAll('[data-error]').forEach((el) => (el.textContent = ''));
+  form.querySelectorAll('.field.invalid').forEach((el) => el.classList.remove('invalid'));
+}
+
+function showErrors(errors = {}) {
+  let firstInput = null;
+  for (const [field, message] of Object.entries(errors)) {
+    const slot = form.querySelector(`[data-error="${field}"]`);
+    if (slot) slot.textContent = message;
+
+    const input = form.elements[field];
+    if (input instanceof HTMLElement) {
+      input.closest('.field')?.classList.add('invalid');
+      firstInput ??= input;
+    }
+  }
+  (firstInput || rolesList.querySelector('input'))?.focus();
+}
+
+// ---------- Leer y validar el formulario ----------
+function readForm() {
+  const fd = new FormData(form);
+  return {
+    firstName: fd.get('firstName').trim(),
+    lastName: fd.get('lastName').trim(),
+    documentTypeId: fd.get('documentTypeId'),
+    documentNumber: fd.get('documentNumber').trim(),
+    email: fd.get('email').trim(),
+    phoneNumber: fd.get('phoneNumber').trim(),
+    sexId: fd.get('sexId'),
+    genderId: fd.get('genderId'),
+    username: fd.get('username').trim(),
+    password: fd.get('password'),
+    roleIds: fd.getAll('roleIds').map(Number)
+  };
+}
+
+// Validación rápida en el navegador. La definitiva la hace el servidor.
+function validate(data) {
+  const errors = {};
+  if (!data.firstName) errors.firstName = 'Escribe los nombres.';
+  if (!data.lastName) errors.lastName = 'Escribe los apellidos.';
+  if (!data.documentTypeId) errors.documentTypeId = 'Selecciona el tipo de documento.';
+  if (!/^[A-Za-z0-9-]{3,30}$/.test(data.documentNumber)) errors.documentNumber = 'Usa entre 3 y 30 letras, números o guiones.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errors.email = 'Escribe un correo válido.';
+  if (data.phoneNumber && !/^\+?[0-9 ]{7,20}$/.test(data.phoneNumber)) errors.phoneNumber = 'Usa solo números (7 a 20 dígitos).';
+  if (!data.sexId) errors.sexId = 'Selecciona el sexo.';
+  if (!/^[a-zA-Z0-9._-]{4,50}$/.test(data.username)) errors.username = 'Entre 4 y 50 caracteres: letras, números, punto, guion o guion bajo.';
+  if (data.password.length < 8) errors.password = 'La contraseña debe tener al menos 8 caracteres.';
+  if (data.roleIds.length === 0) errors.roleIds = 'Asigna al menos un rol.';
+  return errors;
+}
+
+// ---------- Pintar datos ----------
+function renderRoles(roles) {
+  rolesList.innerHTML = roles.map((role) => `
+    <label class="role">
+      <input type="checkbox" name="roleIds" value="${role.id}">
+      <span class="role-body">
+        <strong>${escapeHtml(role.name)}</strong>
+        ${role.description ? `<small>${escapeHtml(role.description)}</small>` : ''}
+      </span>
+    </label>`).join('');
+}
+function renderRoleList(roles) {
+
+  roleCount.textContent =
+    roles.length === 1
+      ? '1 rol'
+      : `${roles.length} roles`;
+
+  if (roles.length === 0) {
+
+    roleList.innerHTML = `
+      <li class="empty">
+        Aún no hay roles registrados.
+      </li>
+    `;
+
+    return;
+  }
+
+  roleList.innerHTML =
+    roles.map((role) => {
+
+      return `
+        <li>
+
+          <div class="name">
+            ${escapeHtml(role.name)}
+          </div>
+
+          <div class="meta">
+            Código:
+            ${escapeHtml(role.code)}
+          </div>
+
+          ${
+            role.description
+              ? `
+                <div class="meta">
+                  ${escapeHtml(role.description)}
+                </div>
+              `
+              : ''
+          }
+
+        </li>
+      `;
+
+    }).join('');
+}
+
+
+function renderUsers(users, highlightId) {
+  userCount.textContent = users.length === 1 ? '1 usuario' : `${users.length} usuarios`;
+
+  if (users.length === 0) {
+    userList.innerHTML = '<li class="empty">Aún no hay usuarios. Registra el primero con el formulario.</li>';
+    return;
+  }
+
+  userList.innerHTML = users.map((u) => {
+    const roles = (u.roles || '').split(', ').filter(Boolean)
+      .map((r) => `<span class="tag">${escapeHtml(r)}</span>`).join('');
+    return `
+      <li class="${u.id === highlightId ? 'new' : ''}">
+        <div class="name">${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</div>
+        <div class="meta">${escapeHtml(u.documentType)} ${escapeHtml(u.documentNumber)} · ${escapeHtml(u.email)}</div>
+        <div class="meta">Usuario: ${escapeHtml(u.username)}</div>
+        <div class="tags">${roles}</div>
+      </li>`;
+  }).join('');
+}
+
+// ---------- Cargar datos del servidor ----------
+async function loadCatalogs() {
+  const { documentTypes, sexes, genders, roles } = await getCatalogs();
+  fillSelect(form.elements.documentTypeId, documentTypes, 'Selecciona…');
+  fillSelect(form.elements.sexId, sexes, 'Selecciona…');
+  fillSelect(form.elements.genderId, genders, 'Sin especificar');
+  renderRoles(roles);
+}
+
+async function loadUsers(highlightId) {
+  const users = await getUsers();
+  renderUsers(users, highlightId);
+}
+async function loadRoles() {
+
+  const roles =
+    await getRoles();
+
+  // Mostrar roles registrados
+  renderRoleList(roles);
+
+  // Actualizar los roles disponibles
+  // para asignarlos a los usuarios
+  renderRoles(roles);
+}
+
+// ---------- Eventos ----------
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();          // evita que el navegador recargue la página
+  clearErrors();
+  setMessage('');
+
+  const data = readForm();
+  const errors = validate(data);
+  if (Object.keys(errors).length > 0) {
+    showErrors(errors);
+    setMessage('Revisa los campos marcados.', 'bad');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Registrando…';
+
+  try {
+    const result = await createUser(data);
+    form.reset();
+    setMessage(result.message, 'ok');
+    await loadUsers(result.id);
+    form.elements.firstName.focus();
+  } catch (err) {
+    showErrors(err.errors);
+    setMessage(err.message, 'bad');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Registrar usuario';
+  }
+});
+
+form.addEventListener('reset', () => {
+  clearErrors();
+  setMessage('');
+});
+
+// Quita el error del campo apenas el usuario lo corrige
+form.addEventListener('input', (event) => {
+  const field = event.target.closest('.field');
+  if (field) {
+    field.classList.remove('invalid');
+    const slot = field.querySelector('[data-error]');
+    if (slot) slot.textContent = '';
+  }
+  if (event.target.name === 'roleIds') {
+    form.querySelector('[data-error="roleIds"]').textContent = '';
+  }
+});
+
+togglePassword.addEventListener('click', () => {
+  const input = form.elements.password;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  togglePassword.textContent = show ? 'Ocultar' : 'Mostrar';
+  togglePassword.setAttribute('aria-pressed', String(show));
+});
+// ---------- Crear rol ----------
+
+roleForm.addEventListener(
+  'submit',
+  async (event) => {
+
+    event.preventDefault();
+
+    roleMessage.textContent = '';
+
+    const formData =
+      new FormData(roleForm);
+
+    const role = {
+
+      name:
+        formData
+          .get('name')
+          .trim(),
+
+      code:
+        formData
+          .get('code')
+          .trim()
+          .toUpperCase(),
+
+      description:
+        formData
+          .get('description')
+          .trim()
+    };
+
+
+    // Validar nombre
+    if (!role.name) {
+
+      roleMessage.textContent =
+        'Escribe el nombre del rol.';
+
+      roleMessage.className =
+        'form-message bad';
+
+      return;
+    }
+
+
+    // Validar código
+    if (!role.code) {
+
+      roleMessage.textContent =
+        'Escribe el código del rol.';
+
+      roleMessage.className =
+        'form-message bad';
+
+      return;
+    }
+
+
+    try {
+
+      createRoleBtn.disabled = true;
+
+      createRoleBtn.textContent =
+        'Creando...';
+
+
+      // Enviar el rol al backend
+      const response =
+        await createRole(role);
+
+
+      // Mostrar mensaje
+      roleMessage.textContent =
+        response.message;
+
+      roleMessage.className =
+        'form-message ok';
+
+
+      // Limpiar formulario
+      roleForm.reset();
+
+
+      // Actualizar la lista de roles
+      await loadRoles();
+
+
+    } catch (error) {
+
+      roleMessage.textContent =
+        error.message;
+
+      roleMessage.className =
+        'form-message bad';
+
+    } finally {
+
+      createRoleBtn.disabled = false;
+
+      createRoleBtn.textContent =
+        'Crear rol';
+    }
+
+  }
+);
+
+// ---------- Inicio ----------
+async function init() {
+  try {
+    await loadCatalogs();
+    await loadUsers();
+    await loadRoles();
+  } catch (err) {
+    setMessage(err.message, 'bad');
+  }
+}
+
+init();
