@@ -1,6 +1,6 @@
 // public/js/app.js
 // Controla la vista: llena el formulario, valida, envía y pinta la lista.
-import { getCatalogs, getUsers, createUser, createRole } from './api.js';
+import { getCatalogs, getUsers, createUser, getRoles, createRole } from './api.js';
 
 // ---------- Referencias al DOM ----------
 
@@ -12,6 +12,10 @@ const userCount = document.getElementById('userCount');
 const formMessage = document.getElementById('formMessage');
 const submitBtn = document.getElementById('submitBtn');
 const togglePassword = document.getElementById('togglePassword');
+const roleForm = document.getElementById('roleForm');
+const roleList = document.getElementById('roleList');
+const roleCount = document.getElementById('roleCount');
+const roleMessage = document.getElementById('roleMessage');
 const createRoleBtn = document.getElementById('createRoleBtn');
 
 // ---------- Utilidades ----------
@@ -98,52 +102,22 @@ function renderRoles(roles) {
     </label>`).join('');
 }
 function renderRoleList(roles) {
-
   roleCount.textContent =
     roles.length === 1
       ? '1 rol'
       : `${roles.length} roles`;
 
   if (roles.length === 0) {
-
-    roleList.innerHTML = `
-      <li class="empty">
-        Aún no hay roles registrados.
-      </li>
-    `;
-
+    roleList.innerHTML = '<li class="empty">Aún no hay roles registrados.</li>';
     return;
   }
 
-  roleList.innerHTML =
-    roles.map((role) => {
-
-      return `
-        <li>
-
-          <div class="name">
-            ${escapeHtml(role.name)}
-          </div>
-
-          <div class="meta">
-            Código:
-            ${escapeHtml(role.code)}
-          </div>
-
-          ${
-            role.description
-              ? `
-                <div class="meta">
-                  ${escapeHtml(role.description)}
-                </div>
-              `
-              : ''
-          }
-
-        </li>
-      `;
-
-    }).join('');
+  roleList.innerHTML = roles.map((role) => `
+    <li>
+      <div class="name">${escapeHtml(role.name)}</div>
+      <div class="meta">Código: ${escapeHtml(role.code)}</div>
+      ${role.description ? `<div class="meta">${escapeHtml(role.description)}</div>` : ''}
+    </li>`).join('');
 }
 
 
@@ -182,15 +156,8 @@ async function loadUsers(highlightId) {
   renderUsers(users, highlightId);
 }
 async function loadRoles() {
-
-  const roles =
-    await getRoles();
-
-  // Mostrar roles registrados
+  const roles = await getRoles();
   renderRoleList(roles);
-
-  // Actualizar los roles disponibles
-  // para asignarlos a los usuarios
   renderRoles(roles);
 }
 
@@ -252,111 +219,39 @@ togglePassword.addEventListener('click', () => {
   togglePassword.setAttribute('aria-pressed', String(show));
 });
 // ---------- Crear rol ----------
+roleForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  roleMessage.textContent = '';
 
-roleForm.addEventListener(
-  'submit',
-  async (event) => {
+  const formData = new FormData(roleForm);
+  const role = {
+    name: formData.get('name').trim(),
+    code: formData.get('code').trim().toUpperCase(),
+    description: formData.get('description').trim()
+  };
 
-    event.preventDefault();
-
-    roleMessage.textContent = '';
-
-    const formData =
-      new FormData(roleForm);
-
-    const role = {
-
-      name:
-        formData
-          .get('name')
-          .trim(),
-
-      code:
-        formData
-          .get('code')
-          .trim()
-          .toUpperCase(),
-
-      description:
-        formData
-          .get('description')
-          .trim()
-    };
-
-
-    // Validar nombre
-    if (!role.name) {
-
-      roleMessage.textContent =
-        'Escribe el nombre del rol.';
-
-      roleMessage.className =
-        'form-message bad';
-
-      return;
-    }
-
-
-    // Validar código
-    if (!role.code) {
-
-      roleMessage.textContent =
-        'Escribe el código del rol.';
-
-      roleMessage.className =
-        'form-message bad';
-
-      return;
-    }
-
-
-    try {
-
-      createRoleBtn.disabled = true;
-
-      createRoleBtn.textContent =
-        'Creando...';
-
-
-      // Enviar el rol al backend
-      const response =
-        await createRole(role);
-
-
-      // Mostrar mensaje
-      roleMessage.textContent =
-        response.message;
-
-      roleMessage.className =
-        'form-message ok';
-
-
-      // Limpiar formulario
-      roleForm.reset();
-
-
-      // Actualizar la lista de roles
-      await loadRoles();
-
-
-    } catch (error) {
-
-      roleMessage.textContent =
-        error.message;
-
-      roleMessage.className =
-        'form-message bad';
-
-    } finally {
-
-      createRoleBtn.disabled = false;
-
-      createRoleBtn.textContent =
-        'Crear rol';
-    }
-
+  if (!role.name || !role.code) {
+    roleMessage.textContent = 'Escribe el nombre y el código del rol.';
+    roleMessage.className = 'form-message bad';
+    return;
   }
-);
+
+  createRoleBtn.disabled = true;
+  createRoleBtn.textContent = 'Creando…';
+  try {
+    const response = await createRole(role);
+    roleForm.reset();
+    roleMessage.textContent = response.message;
+    roleMessage.className = 'form-message ok';
+    await loadRoles();
+  } catch (error) {
+    roleMessage.textContent = error.message;
+    roleMessage.className = 'form-message bad';
+  } finally {
+    createRoleBtn.disabled = false;
+    createRoleBtn.textContent = 'Crear rol';
+  }
+});
 
 // ---------- Inicio ----------
 async function init() {
