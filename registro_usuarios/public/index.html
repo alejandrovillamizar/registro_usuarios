@@ -16,7 +16,8 @@
   </header>
 
   <main class="layout">
-    <form id="userForm" class="panel form" novalidate>
+    <div class="forms-column">
+      <form id="userForm" class="panel form" novalidate>
       <fieldset>
         <legend>Datos personales</legend>
 
@@ -104,7 +105,40 @@
         <button type="reset" class="ghost">Limpiar</button>
         <button type="submit" class="primary" id="submitBtn">Registrar usuario</button>
       </div>
-    </form>
+      </form>
+
+      <section class="panel role-manager" aria-labelledby="roleTitle">
+        <div class="list-head">
+          <h2 id="roleTitle">Crear rol</h2>
+          <span id="roleCount" class="count"></span>
+        </div>
+        <p class="section-description">Agrega un rol para que esté disponible al registrar usuarios.</p>
+
+        <form id="roleForm" novalidate>
+          <div class="grid-2">
+            <label class="field">
+              <span>Nombre del rol</span>
+              <input name="name" maxlength="50" required>
+            </label>
+            <label class="field">
+              <span>Código</span>
+              <input name="code" maxlength="30" pattern="[A-Za-z0-9_-]+" required>
+            </label>
+          </div>
+          <label class="field">
+            <span>Descripción <em>(opcional)</em></span>
+            <input name="description" maxlength="255">
+          </label>
+          <div class="actions">
+            <p id="roleMessage" class="form-message" role="status" aria-live="polite"></p>
+            <button type="submit" class="primary" id="createRoleBtn">Crear rol</button>
+          </div>
+        </form>
+
+        <h3 class="role-list-title">Roles registrados</h3>
+        <ul id="roleList" class="role-list"></ul>
+      </section>
+    </div>
 
     <section class="panel list" aria-labelledby="listTitle">
       <div class="list-head">

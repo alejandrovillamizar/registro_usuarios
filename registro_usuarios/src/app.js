@@ -5,6 +5,7 @@ const express = require('express');
 
 const catalogRoutes = require('./routes/catalog.routes');
 const userRoutes = require('./routes/user.routes');
+const roleRoutes = require('./routes/role.routes');
 const { notFound, errorHandler } = require('./middlewares/error.middleware');
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // API
 app.use('/api/catalogs', catalogRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/roles', roleRoutes);
 
 // Manejo de errores (siempre al final)
 app.use('/api', notFound);
